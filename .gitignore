@@ -1,31 +1,60 @@
-# Virtual Environment
-venv/
-.env
-
-# Python
+# ----------------
+# General
+# ----------------
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Distribution / packaging
-dist/
-build/
-*.egg-info/
+# ----------------
+# Virtual environments
+# ----------------
+.venv/
+venv/
+env/
+ENV/
 
-# Local development settings
+# ----------------
+# Environment files
+# ----------------
+# dotenv files (local secrets)
+.env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
-# Vector store
+# ----------------
+# Build / packaging
+# ----------------
+build/
+dist/
+*.egg-info/
+
+# ----------------
+# Streamlit / runtime
+# ----------------
+.streamlit/
+
+# ----------------
+# FAISS / vector stores / DB
+# ----------------
 resume_faiss_index/
 *.index
 chroma_resume_db/
 
-# IDE
+# ----------------
+# IDE / Editor
+# ----------------
 .vscode/
 .idea/
 
-# Logs
+# ----------------
+# Misc
+# ----------------
+*.so
+*.dylib
 *.log
+.DS_Store
+Thumbs.db
+
