@@ -36,13 +36,33 @@ import json
 import base64
 
 import streamlit as st
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
-from langchain.schema import Document
-from langchain.chains import RetrievalQA
-from langchain.llms import OpenAI
+# Lazily import optional heavy dependencies (langchain, FAISS, etc.).
+# Streamlit Cloud often cannot build native packages (faiss, pyarrow, etc.),
+# so we allow the app to run in a degraded "frontend-only" mode when those
+# packages aren't available. To enable full RAG features, install the extra
+# dependencies locally or on your deployment target (see requirements.txt).
+try:
+    from langchain.embeddings import OpenAIEmbeddings
+    from langchain.vectorstores import FAISS
+    from langchain.schema import Document
+    from langchain.chains import RetrievalQA
+    from langchain.llms import OpenAI
+    LANGCHAIN_AVAILABLE = True
+except Exception:
+    LANGCHAIN_AVAILABLE = False
+    # Provide a lightweight fallback Document used for UI rendering when
+    # langchain isn't installed.
+    from dataclasses import dataclass
 
-from PyPDF2 import PdfReader
+    @dataclass
+    class Document:
+        page_content: str
+        metadata: dict
+
+try:
+    from PyPDF2 import PdfReader
+except Exception:
+    PdfReader = None
 
 
 # ----------------------------
@@ -140,38 +160,45 @@ if uploaded_files or rebuild_index or clear_index:
     if not documents:
         st.warning("No documents extracted. Please upload PDFs.")
     else:
-        # Build embeddings and FAISS index
-        if OPENAI_API_KEY is None:
-            st.error("Please set OPENAI_API_KEY in your environment.")
-        else:
-            os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
-            embeddings = OpenAIEmbeddings(model=EMBEDDINGS_MODEL)
-
-            # Create or load FAISS index
-            if not os.path.exists(INDEX_DIR):
-                os.makedirs(INDEX_DIR)
-            # We store the vector store in memory for this session; you can persist if needed
-            vector_store = FAISS.from_documents(documents, embeddings)
-
-            # Persist the store object in session (in-memory for this run)
-            st.session_state.doc_store = vector_store
-            st.session_state.docs_metadata = metadata_list
-
-            # Setup LLM + RetrievalQA chain
-            llm = OpenAI(model=LLM_MODEL)
-            qa = RetrievalQA.from_chain_type(
-                llm=llm,
-                chain_type="stuff",  # or "map_reduce" etc.
-                retriever=vector_store.as_retriever(search_kwargs={"k": 4}),
-                return_source_documents=True
+        # Build embeddings and FAISS index (optional, requires langchain + faiss)
+        if not LANGCHAIN_AVAILABLE:
+            st.error(
+                "Full RAG features are disabled because required packages (langchain/FAISS) are not installed in this environment.\n"
+                "To enable indexing and QA, deploy with the full `requirements.txt` or run locally.\n"
+                "(You can still upload PDFs, but indexing will be skipped.)"
             )
-            st.session_state.qa_chain = qa
+        else:
+            if OPENAI_API_KEY is None:
+                st.error("Please set OPENAI_API_KEY in your environment.")
+            else:
+                os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+                embeddings = OpenAIEmbeddings(model=EMBEDDINGS_MODEL)
 
-            st.success(f"Indexed {len(documents)} document(s). You can now ask questions.")
-            # Show a quick summary
-            st.write("Indexed documents:")
-            for idx, m in enumerate(metadata_list, start=1):
-                st.write(f"{idx}. {m.get('candidate_name')} (source: {m.get('source')})")
+                # Create or load FAISS index
+                if not os.path.exists(INDEX_DIR):
+                    os.makedirs(INDEX_DIR)
+                # We store the vector store in memory for this session; you can persist if needed
+                vector_store = FAISS.from_documents(documents, embeddings)
+
+                # Persist the store object in session (in-memory for this run)
+                st.session_state.doc_store = vector_store
+                st.session_state.docs_metadata = metadata_list
+
+                # Setup LLM + RetrievalQA chain
+                llm = OpenAI(model=LLM_MODEL)
+                qa = RetrievalQA.from_chain_type(
+                    llm=llm,
+                    chain_type="stuff",  # or "map_reduce" etc.
+                    retriever=vector_store.as_retriever(search_kwargs={"k": 4}),
+                    return_source_documents=True,
+                )
+                st.session_state.qa_chain = qa
+
+                st.success(f"Indexed {len(documents)} document(s). You can now ask questions.")
+                # Show a quick summary
+                st.write("Indexed documents:")
+                for idx, m in enumerate(metadata_list, start=1):
+                    st.write(f"{idx}. {m.get('candidate_name')} (source: {m.get('source')})")
 
 # 2) Chat / Query area
 st.sidebar.header("Query")
